@@ -1,0 +1,5 @@
+# no subir archivos de prueba ni temporales
+input.png
+output.svg
+*.tmp
+.omo/

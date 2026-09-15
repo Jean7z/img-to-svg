@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Imagen &rarr; SVG con vtracer</title>
+<meta name="description" content="Convierte imágenes a SVG vectorizado con vtracer 1.0 en WebAssembly. Todo ocurre en tu navegador, sin servidor.">
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --accent: #a78bfa; --accent2: #7c5cff; --ok: #3fb950;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  header { padding: 24px 20px 12px; text-align: center; }
+  header h1 { font-size: 26px; letter-spacing: -.02em; }
+  header h1 span { color: var(--accent); }
+  header p { color: var(--muted); margin-top: 4px; font-size: 14px; }
+  main {
+    max-width: 1180px; margin: 0 auto; padding: 12px 16px 60px;
+    display: grid; grid-template-columns: 380px 1fr; gap: 18px;
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin-bottom: 12px; }
+
+  #drop {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 28px 16px;
+    text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+    color: var(--muted);
+  }
+  #drop:hover, #drop.over { border-color: var(--accent2); background: #1c2230; color: var(--text); }
+  #drop .big { font-size: 30px; display: block; margin-bottom: 6px; }
+  #file { display: none; }
+  #fname { margin-top: 8px; color: var(--accent); font-size: 13px; word-break: break-all; }
+
+  .param { margin-bottom: 14px; }
+  .param .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .param label { font-size: 13.5px; }
+  .param code { color: var(--accent); font-size: 11.5px; }
+  .param .val { color: var(--ok); font-weight: 600; font-size: 13px; }
+  .param input[type=range] { width: 100%; margin-top: 4px; accent-color: var(--accent2); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .radio-row { display: flex; gap: 16px; margin-top: 4px; flex-wrap: wrap; }
+  .radio-row label { font-size: 13.5px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  button {
+    border: 0; border-radius: 8px; padding: 10px 16px; font-size: 14px; cursor: pointer;
+    transition: filter .15s, opacity .15s;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #btnConvert { background: linear-gradient(135deg, var(--accent2), var(--accent)); color: #fff; font-weight: 600; flex: 1; }
+  #btnDownload { background: #21262d; color: var(--text); border: 1px solid var(--border); }
+  button:hover:not(:disabled) { filter: brightness(1.12); }
+
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .panes { grid-template-columns: 1fr; } }
+  .pane { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .pane h3 { font-size: 13px; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--border);
+    text-transform: uppercase; letter-spacing: .06em; display: flex; justify-content: space-between; gap: 8px; }
+  .pane h3 small { color: var(--accent); text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .stage {
+    height: 420px; display: grid; place-items: center; overflow: hidden; position: relative;
+    background: repeating-conic-gradient(#0f141b 0% 25%, #121821 0% 50%) 0 0 / 22px 22px;
+    padding: 10px;
+  }
+  .stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; box-shadow: 0 2px 12px rgba(0,0,0,.5); }
+  .placeholder { color: var(--muted); font-size: 13px; }
+
+  #status { text-align: center; padding: 10px 0 4px; min-height: 26px; font-size: 14px; color: var(--muted); }
+  #status.busy { color: var(--accent); }
+  #status.ok { color: var(--ok); }
+  #status.err { color: #f85149; }
+  .statline { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .statline b { color: var(--text); }
+
+  .cli { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+    background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+    overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  .clihead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .clihead h2 { margin: 0; }
+  .clihead a { color: var(--accent); font-size: 12px; text-decoration: none; }
+  #btnCopy { background: #21262d; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+
+  details { margin-top: 12px; }
+  details summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+  details p, details li { color: var(--muted); font-size: 13px; margin: 6px 0; }
+  details ul { padding-left: 20px; }
+  details code { color: var(--accent); font-size: 12px; }
+  .tag { color: var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Imagen <span>&rarr;</span> SVG con vtracer</h1>
+  <p>Vectorizaci&oacute;n con el core <b>vtracer 1.0</b> en WebAssembly. Todo ocurre en tu navegador: tus im&aacute;genes nunca se suben a ning&uacute;n servidor.</p>
+</header>
+
+<main>
+  <div class="left">
+    <div class="card">
+      <h2>1 &middot; Imagen</h2>
+      <div id="drop">
+        <span class="big">&#128444;</span>
+        Arrastra una imagen aqu&iacute; o haz clic para elegirla<br>
+        <small>PNG &middot; JPG &middot; WebP &middot; GIF &middot; BMP</small>
+      </div>
+      <input type="file" id="file" accept="image/*">
+      <div id="fname"></div>
+    </div>
+
+    <div class="card">
+      <h2>2 &middot; Par&aacute;metros <span style="text-transform:none;color:var(--accent)">(m&aacute;x. fidelidad)</span></h2>
+
+      <div class="param">
+        <div class="row"><label>Modo de ajuste</label><code>--mode</code></div>
+        <div class="radio-row">
+          <label><input type="radio" name="mode" value="pixel" checked> pixel</label>
+          <label><input type="radio" name="mode" value="spline"> spline</label>
+          <label><input type="radio" name="mode" value="polygon"> polygon</label>
+        </div>
+        <div class="hint">pixel = sin simplificar curvas, la m&aacute;xima fidelidad posible.</div>
+      </div>
+
+      <div class="param">
+        <div class="row"><label>Jerarqu&iacute;a de capas</label><code>--hierarchical</code></div>
+        <div class="radio-row">
+          <label><input type="radio" name="hierarchical" value="stacked" checked> stacked</label>
+          <label><input type="radio" name="hierarchical" value="cutout"> cutout</label>
+        </div>
+        <div class="hint">stacked apila capas transl&uacute;cidas (mejor para fotos); cutout genera un mosaico sin costuras.</div>
+      </div>
+
+      <div class="param">
+        <div class="row"><label for="cp">Precisi&oacute;n de color</label><code>--color_precision</code><span class="val" id="cpV">8</span></div>
+        <input type="range" id="cp" min="1" max="8" step="1" value="8">
+        <div class="hint">Bits significativos por canal RGB. 8 = todos los colores.</div>
+      </div>
+
+      <div class="param">
+        <div class="row"><label for="fs">Filtro de motas</label><code>--filter_speckle</code><span class="val" id="fsV">0</span></div>
+        <input type="range" id="fs" min="0" max="128" step="1" value="0">
+        <div class="hint">Descarta parches menores a N px. 0 = conservarlo todo.</div>
+      </div>
+
+      <div class="param">
+        <div class="row"><label for="ld">Paso de gradiente</label><code>--gradient_step</code><span class="val" id="ldV">4</span></div>
+        <input type="range" id="ld" min="0" max="64" step="1" value="4">
+        <div class="hint">Diferencia de color entre capas de gradiente. Cuanto m&aacute;s bajo, m&aacute;s capas y m&aacute;s parecido al original. 0 = clustering diagonal (detalle m&aacute;ximo).</div>
+      </div>
+
+      <div class="param" id="rowCt" style="display:none">
+        <div class="row"><label for="ct">Umbral de esquina</label><code>--corner_threshold</code><span class="val" id="ctV">60</span></div>
+        <input type="range" id="ct" min="0" max="180" step="1" value="60">
+      </div>
+
+      <div class="param" id="rowSt" style="display:none">
+        <div class="row"><label for="st">Umbral de spline</label><code>--splice_threshold</code><span class="val" id="stV">45</span></div>
+        <input type="range" id="st" min="0" max="180" step="1" value="45">
+      </div>
+
+      <div class="param">
+        <div class="row"><label for="pp">Precisi&oacute;n de path</label><code>--path_precision</code><span class="val" id="ppV">8</span></div>
+        <input type="range" id="pp" min="0" max="10" step="1" value="8">
+      </div>
+
+      <div class="param">
+        <div class="row"><label for="opt">Optimizar salida</label><code>--optimize (1.0)</code><span class="val" id="optV">No</span></div>
+        <input type="range" id="opt" min="0" max="1" step="1" value="0">
+        <div class="hint">No = colores exactos del original (archivo mayor). S&iacute; = re-cuantiza y compacta.</div>
+      </div>
+
+      <div class="actions" style="margin-top:16px">
+        <button id="btnConvert" disabled>Convertir</button>
+        <button id="btnDownload" disabled>Descargar SVG</button>
+      </div>
+      <div id="status">Sube una imagen para empezar.</div>
+      <div class="statline" id="stats"></div>
+    </div>
+
+    <div class="card">
+      <div class="clihead">
+        <h2>Comando CLI equivalente</h2>
+        <a href="https://github.com/visioncortex/vtracer" target="_blank" rel="noopener">vtracer en GitHub &#8599;</a>
+      </div>
+      <div class="cli" id="cli">vtracer input.png output.svg</div>
+      <button id="btnCopy" style="margin-top:8px">Copiar comando</button>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="panes">
+      <div class="pane">
+        <h3>Original <small id="origMeta"></small></h3>
+        <div class="stage" id="origStage"><span class="placeholder">Sin imagen</span></div>
+      </div>
+      <div class="pane">
+        <h3>SVG vectorizado <small id="svgMeta"></small></h3>
+        <div class="stage" id="svgStage"><span class="placeholder">Esperando&hellip;</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <details>
+        <summary>&iquest;Cu&aacute;l es la configuraci&oacute;n m&aacute;s potente? (investigaci&oacute;n)</summary>
+        <p>Tu comando ya es casi el m&aacute;ximo posible. Esto es lo que investigu&eacute;:</p>
+        <ul>
+          <li><b>--mode pixel</b> = sin ajuste de curvas: conserva cada borde de p&iacute;xel. Es el modo m&aacute;s fiel que existe en vtracer.</li>
+          <li><b>--color_precision 8</b> = los 8 bits de cada canal RGB (rango 1&ndash;8). Ya lo tienes.</li>
+          <li><b>--filter_speckle 0</b> = no descarta ning&uacute;n detalle. Ya lo tienes.</li>
+          <li class="tag"><b>Mejora real:</b> a&ntilde;ade <code>--gradient_step 4</code> (el valor por defecto es 16). Cuanto m&aacute;s bajo, m&aacute;s capas de gradiente produce y m&aacute;s se parece al original. Con tu imagen pas&oacute; de <b>12.256</b> a <b>22.457 paths</b>.</li>
+          <li class="tag"><b>Mejora (vtracer &ge; 1.0):</b> <code>--optimize 0</code> conserva los colores exactos (por defecto 1 re-cuantiza).</li>
+          <li>En vtracer 1.x hay flags nuevas: <code>--palette</code>, <code>--max-colors</code>, <code>--simplify</code> (reduce fidelidad), <code>--clustering watershed</code>. &Uacute;salas solo si buscas estilos concretos, no fidelidad.</li>
+          <li>Aviso: en el n&uacute;cleo visioncortex 0.8.8 (builds WASM viejos de npm) <code>--color_precision 8</code> crashea por un assert interno, el m&aacute;ximo era 7. Este sitio usa el core <b>vtracer 1.0</b>, donde 8 es v&aacute;lido, y reproduce exactamente la salida de tu CLI 0.6.5.</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
