@@ -1,7 +1,7 @@
 # Imagen → SVG con vtracer
 
 Convierte imágenes (PNG, JPG, WebP, GIF, BMP) a SVG vectorizado con el core
-**vtracer 1.0** compilado a WebAssembly. Todo corre en tu navegador — las
+**vtracer 1.0** compilado a WebAssembly. Todo corre en tu navegador: las
 imágenes nunca se suben a ningún servidor.
 
 ## Uso
